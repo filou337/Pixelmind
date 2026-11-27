@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Secrets
+.env
+
+# Data & outputs (LEVIR-CD licence: academic use only, never commit images/masks)
+data/
+artifacts/
+mlruns/
+mlartifacts/
+*.ckpt
+*.pt
+*.pth
+
+# Notebooks / IDE
+.ipynb_checkpoints/
+.vscode/
+.idea/
