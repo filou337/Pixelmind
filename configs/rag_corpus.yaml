@@ -1,0 +1,26 @@
+# RAG corpus allowlist (dossier §8.1, §10.3): only documents listed here are indexed.
+# Every entry records its type and licence; `path` may be a glob.
+documents:
+  - path: docs/PIXELMIND_Dossier_Architecture_Technique.pdf
+    title: Dossier d'architecture technique PIXELMIND
+    doc_type: architecture
+    licence: PIXELMIND – document interne du projet
+  - path: docs/adr/*.md
+    doc_type: adr
+    licence: PIXELMIND – document interne du projet
+  - path: docs/data/levircd_card.md
+    doc_type: dataset
+    licence: PIXELMIND – document interne du projet (décrit un dataset à usage académique)
+  - path: docs/data/levircd_quality_report.md
+    doc_type: report
+    licence: PIXELMIND – document interne du projet
+  - path: docs/experiments/levircd_benchmark.md
+    doc_type: report
+    licence: PIXELMIND – document interne du projet
+  - path: docs/model_cards/*.md
+    doc_type: model_card
+    licence: PIXELMIND – document interne du projet
+  - path: README.md
+    title: README PIXELMIND
+    doc_type: readme
+    licence: PIXELMIND – document interne du projet

@@ -9,7 +9,7 @@ Décisions : [`docs/adr/`](docs/adr/).
 
 ## Statut
 
-Sprint 4 (API) : API d'analyse T1/T2, contrôle qualité des uploads, stockage et artefacts. Sprint 3 : entraînement GPU à lancer sur Kaggle.
+Sprint 5 (RAG) : questions sur la documentation et sur une analyse, réponses sourcées par Claude. Sprint 3 : entraînement GPU à lancer sur Kaggle.
 
 | Sprint | Contenu | Statut |
 |---|---|---|
@@ -18,7 +18,7 @@ Sprint 4 (API) : API d'analyse T1/T2, contrôle qualité des uploads, stockage e
 | S2 | Baselines (différence d'images, gradient boosting) | ✅ |
 | S3 | U-Net, Siamese U-Net, MLflow | ⏳ code prêt, entraînement GPU à lancer |
 | S4 | API d'analyse, stockage | ✅ |
-| S5 | RAG (Qdrant) | |
+| S5 | RAG (Qdrant + Claude) | ✅ |
 | S6 | Agents (LangGraph) + Streamlit | |
 | S7 | Gouvernance / MLOps | |
 
@@ -114,6 +114,27 @@ pour l'audit.
 Le serveur sert les modèles présents dans `artifacts/` : baselines (Sprint 2) et
 checkpoints évalués (Sprint 3). Choix d'architecture :
 [ADR 0004](docs/adr/0004-api-analyse-synchrone-et-stockage.md).
+
+## RAG documentaire (Sprint 5)
+
+```bash
+python -m pixelmind.rag.index        # indexe configs/rag_corpus.yaml -> artifacts/rag/ (API arrêtée)
+python -m pixelmind.rag.evaluate     # Recall@k / MRR par mode + seuil d'abstention (gratuit)
+```
+
+| Route | Usage |
+|---|---|
+| `POST /api/v1/questions` | `{"question": "...", "mode": "hybrid", "k": 5, "doc_types": ["adr"]}` |
+| `POST /api/v1/analyses/{id}/questions` | Question sur une analyse : ses résultats mesurés + la documentation |
+
+La recherche est locale : Qdrant embarqué, embeddings multilingues et BM25, fusion RRF.
+La réponse est générée par Claude (`claude-opus-5-5` par défaut, voir `.env.example`)
+avec des citations `[n]` vers les passages sources. Sans information pertinente, le
+système s'abstient. Chaque question est journalisée dans `artifacts/rag/qa_log.db`.
+Pour fonctionner sans LLM : `PIXELMIND_LLM_PROVIDER=extractive`.
+
+Évaluation : [`docs/experiments/rag_eval.md`](docs/experiments/rag_eval.md). Choix
+d'architecture : [ADR 0005](docs/adr/0005-rag-documentaire.md).
 
 ## Structure
 

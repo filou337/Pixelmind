@@ -3,6 +3,7 @@
 uvicorn pixelmind.api.main:app
 """
 
+import threading
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -11,15 +12,26 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 
 from pixelmind import __version__
-from pixelmind.api.schemas import AnalysisResult, AnalysisSummary, Health, ModelList
+from pixelmind.api.schemas import (
+    AnalysisQuestionRequest,
+    AnalysisResult,
+    AnalysisSummary,
+    AnswerResult,
+    Health,
+    ModelList,
+    QuestionRequest,
+)
+from pixelmind.rag.generator import GenerationError
 from pixelmind.services.analysis import AnalysisRejected, AnalysisService, InputError, Upload
 from pixelmind.settings import Settings
 
 
-def create_app(service: AnalysisService | None = None) -> FastAPI:
+def create_app(service: AnalysisService | None = None, qa_service=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.service = service or AnalysisService.from_settings(Settings.from_env())
+        app.state.qa = qa_service  # built on first question: loads the embedding model
+        app.state.qa_lock = threading.Lock()
         yield
 
     app = FastAPI(
@@ -34,6 +46,24 @@ def create_app(service: AnalysisService | None = None) -> FastAPI:
         return request.app.state.service
 
     Service = Annotated[AnalysisService, Depends(get_service)]
+
+    def get_qa(request: Request):
+        state = request.app.state
+        with state.qa_lock:
+            if state.qa is None:
+                from pixelmind.rag.service import build_qa_service
+
+                try:
+                    state.qa = build_qa_service(state.service.settings)
+                except FileNotFoundError as exc:
+                    raise HTTPException(503, str(exc)) from None
+        return state.qa
+
+    def ask(qa, question: str, **kwargs) -> dict:
+        try:
+            return qa.ask(question, **kwargs)
+        except GenerationError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from None
 
     async def read_upload(f: UploadFile, svc: AnalysisService) -> Upload:
         limit = int(svc.settings.max_upload_mb * 1024 * 1024)
@@ -94,6 +124,22 @@ def create_app(service: AnalysisService | None = None) -> FastAPI:
         if path is None:
             raise HTTPException(404, "artifact not found")
         return FileResponse(path, media_type="image/png")
+
+    @app.post("/api/v1/questions", response_model=AnswerResult)
+    def ask_docs(body: QuestionRequest, request: Request) -> dict:
+        """Question on the project documentation, answered with citations."""
+        return ask(get_qa(request), body.question, mode=body.mode, k=body.k,
+                   doc_types=body.doc_types)  # fmt: skip
+
+    @app.post("/api/v1/analyses/{analysis_id}/questions", response_model=AnswerResult)
+    def ask_analysis(
+        analysis_id: str, body: AnalysisQuestionRequest, request: Request, svc: Service
+    ) -> dict:
+        """Question on one analysis: its measured results plus the documentation."""
+        result = svc.store.get(analysis_id)
+        if result is None:
+            raise HTTPException(404, "analysis not found")
+        return ask(get_qa(request), body.question, analysis=result)
 
     return app
 

@@ -1,0 +1,91 @@
+# RAG evaluation set (dossier §8.4). A retrieved chunk is relevant when it belongs to one of
+# `docs` and contains at least one of `keywords` (case-insensitive). `answerable: false`
+# questions have no answer in the corpus: the system must abstain.
+questions:
+  - q: Pourquoi le MVP n'a-t-il pas de couche géospatiale ?
+    docs: [0001_mvp_sans_couche_geospatiale]
+    keywords: [géoréférenc, CRS]
+  - q: Combien de paires d'images contient LEVIR-CD ?
+    docs: [levircd_card, pixelmind_dossier_architecture_technique, levircd_quality_report]
+    keywords: ["637"]
+  - q: Quelle est la licence de LEVIR-CD ? Peut-on l'utiliser commercialement ?
+    docs: [levircd_card, pixelmind_dossier_architecture_technique, readme]
+    keywords: [académique]
+  - q: Comment sont traités les masques qui contiennent des pixels à 156 ou 254 ?
+    docs: [0002_binarisation_des_masques_levircd, levircd_card]
+    keywords: ["128"]
+  - q: Pourquoi l'entraînement deep learning se fait-il sur Kaggle plutôt qu'en local ?
+    docs: [0003_entrainement_dl_sur_gpu_distant, readme]
+    keywords: [GPU]
+  - q: Quel F1 sur le jeu de test obtient le modèle gbm ?
+    docs: [levircd_benchmark, baselines]
+    keywords: ["43,1", "43.1"]
+  - q: Quelles features sont les plus importantes pour le gradient boosting ?
+    docs: [levircd_benchmark, baselines]
+    keywords: [t2_b]
+  - q: Comment éviter les fuites de données entre l'entraînement et le test ?
+    docs: [pixelmind_dossier_architecture_technique, levircd_card]
+    keywords: [scène, split]
+  - q: Quelle fonction de perte est utilisée pour entraîner le U-Net ?
+    docs: [pixelmind_dossier_architecture_technique, readme]
+    keywords: [Dice]
+  - q: Quelle est la différence entre un U-Net et un Siamese U-Net ?
+    docs: [pixelmind_dossier_architecture_technique, readme]
+    keywords: [partag]
+  - q: Quels statuts de qualité des données existent et que signifient-ils ?
+    docs: [pixelmind_dossier_architecture_technique]
+    keywords: [REVIEW]
+  - q: Quel est le rôle du RAG dans PIXELMIND ?
+    docs: [pixelmind_dossier_architecture_technique]
+    keywords: [contextualiser, RAG]
+  - q: Pourquoi utiliser LangGraph pour orchestrer les agents ?
+    docs: [pixelmind_dossier_architecture_technique]
+    keywords: [LangGraph]
+  - q: Quelles métriques servent à évaluer les modèles de détection de changement ?
+    docs: [pixelmind_dossier_architecture_technique, levircd_benchmark]
+    keywords: [IoU]
+  - q: Comment le seuil de décision des modèles est-il choisi ?
+    docs: [levircd_benchmark, pixelmind_dossier_architecture_technique, baselines, readme]
+    keywords: [val]
+  - q: Pourquoi l'API d'analyse répond-elle de façon synchrone ?
+    docs: [0004_api_analyse_synchrone_et_stockage]
+    keywords: [synchrone]
+  - q: Où sont stockés les résultats des analyses ?
+    docs: [0004_api_analyse_synchrone_et_stockage, readme]
+    keywords: [SQLite]
+  - q: Quelle proportion de pixels est changée en moyenne dans LEVIR-CD ?
+    docs: [levircd_quality_report, levircd_card]
+    keywords: ["4,6", "4.59", "4,59"]
+  - q: Quels sont les principaux risques du projet et comment les réduire ?
+    docs: [pixelmind_dossier_architecture_technique]
+    keywords: [risque]
+  - q: Que faire en cas de drift des données ? Faut-il réentraîner automatiquement ?
+    docs: [pixelmind_dossier_architecture_technique]
+    keywords: [drift]
+  - q: Quelle est la résolution spatiale des images LEVIR-CD ?
+    docs: [levircd_card, pixelmind_dossier_architecture_technique]
+    keywords: ["0,5"]
+  - q: Les très petits changements sont-ils bien détectés par les baselines ?
+    docs: [baselines, levircd_benchmark]
+    keywords: ["1 %", "< 1"]
+  - q: Quels contrôles de sécurité sont appliqués aux fichiers envoyés ?
+    docs: [pixelmind_dossier_architecture_technique, readme, 0004_api_analyse_synchrone_et_stockage]
+    keywords: [taille, upload, format]
+  - q: Que doit contenir une model card ?
+    docs: [pixelmind_dossier_architecture_technique]
+    keywords: [model card]
+  - q: Quel outil sert à suivre les expériences d'entraînement ?
+    docs: [pixelmind_dossier_architecture_technique, readme, 0003_entrainement_dl_sur_gpu_distant]
+    keywords: [MLflow]
+  - q: Quelle est la recette de la tarte tatin ?
+    answerable: false
+  - q: Qui a gagné la coupe du monde de football 2018 ?
+    answerable: false
+  - q: Quel est le prix d'une licence commerciale de PIXELMIND ?
+    answerable: false
+  - q: Quelle est la population de Lyon ?
+    answerable: false
+  - q: Combien coûte un abonnement mensuel à PIXELMIND ?
+    answerable: false
+  - q: Quel temps fera-t-il demain à Austin ?
+    answerable: false

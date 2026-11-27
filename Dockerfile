@@ -5,7 +5,7 @@ WORKDIR /app
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install --no-cache-dir ".[ml]"
+RUN pip install --no-cache-dir ".[ml,rag]"
 
 # run as an unprivileged user; artifacts/ is a mounted volume
 RUN useradd --create-home --uid 1000 pixelmind
