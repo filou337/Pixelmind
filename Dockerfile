@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 # security updates of the base image + up-to-date packaging tools (Trivy findings)
