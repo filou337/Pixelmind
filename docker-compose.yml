@@ -7,5 +7,5 @@ services:
       - path: .env
         required: false
     volumes:
-      - ./data:/app/data
+      # models (experiments/levircd, models/) are read from here, analyses are written here
       - ./artifacts:/app/artifacts

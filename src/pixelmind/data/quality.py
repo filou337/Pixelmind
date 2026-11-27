@@ -57,8 +57,11 @@ def normalize_mask(mask: np.ndarray) -> tuple[np.ndarray | None, list[Issue]]:
     ]
 
 
-def check_pair(t1: np.ndarray, t2: np.ndarray, mask: np.ndarray) -> list[Issue]:
-    """Per-pair rules: validity (RGB uint8), consistency (same size), binary mask."""
+def check_pair(t1: np.ndarray, t2: np.ndarray, mask: np.ndarray | None = None) -> list[Issue]:
+    """Per-pair rules: validity (RGB uint8), consistency (same size), binary mask.
+
+    mask is optional (an analysis request may come without a reference mask).
+    """
     issues: list[Issue] = []
 
     for name, img in (("t1", t1), ("t2", t2)):
@@ -73,10 +76,12 @@ def check_pair(t1: np.ndarray, t2: np.ndarray, mask: np.ndarray) -> list[Issue]:
         elif img.size and img.std() < 1.0:
             issues.append(Issue(Status.WARN, f"{name}_constant", f"{name} is (almost) constant"))
 
-    m, mask_issues = normalize_mask(mask)
-    issues += mask_issues
-
-    sizes = {"t1": t1.shape[:2], "t2": t2.shape[:2], "mask": mask.shape[:2]}
+    m = None
+    sizes = {"t1": t1.shape[:2], "t2": t2.shape[:2]}
+    if mask is not None:
+        m, mask_issues = normalize_mask(mask)
+        issues += mask_issues
+        sizes["mask"] = mask.shape[:2]
     if len(set(sizes.values())) > 1:
         issues.append(Issue(Status.FAIL, "size_mismatch", f"sizes differ: {sizes}"))
 
