@@ -1,0 +1,13 @@
+# Local CPU smoke test: a few images, tiny network, 2 epochs. Checks the pipeline, not quality.
+model: siamese_unet
+base_width: 8
+crop: 128
+crops_per_image: 2
+batch_size: 4
+epochs: 2
+num_workers: 0
+cache: false
+tile: 256
+max_train_images: 8
+max_val_images: 2
+out_dir: artifacts/smoke

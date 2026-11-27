@@ -14,7 +14,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      # CPU-only torch wheel (~200 MB instead of ~2 GB of CUDA libraries)
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
+        env:
+          MLFLOW_DISABLE_AGENT_HINT: "1"

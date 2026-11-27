@@ -9,14 +9,14 @@ Décisions : [`docs/adr/`](docs/adr/).
 
 ## Statut
 
-Sprint 1 (Data) : téléchargement LEVIR-CD, manifeste, contrôles qualité, EDA.
+Sprint 3 (Deep Learning) : U-Net et Siamese U-Net, suivi MLflow, entraînement GPU sur Kaggle.
 
 | Sprint | Contenu | Statut |
 |---|---|---|
 | S0 | Repo, conventions, CI, Docker | ✅ |
 | S1 | LEVIR-CD, manifeste, EDA, qualité | ✅ |
-| S2 | Baselines (différence d'images, RF) | ⏳ |
-| S3 | U-Net, Siamese U-Net, MLflow | |
+| S2 | Baselines (différence d'images, gradient boosting) | ✅ |
+| S3 | U-Net, Siamese U-Net, MLflow | ⏳ code prêt, entraînement GPU à lancer |
 | S4 | API d'analyse, stockage | |
 | S5 | RAG (Qdrant) | |
 | S6 | Agents (LangGraph) + Streamlit | |
@@ -26,6 +26,7 @@ Sprint 1 (Data) : téléchargement LEVIR-CD, manifeste, contrôles qualité, EDA
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu   # sans GPU NVIDIA
 pip install -e ".[dev]"
 cp .env.example .env
 
@@ -48,6 +49,38 @@ et anomalies. Le split officiel train/val/test est conservé tel quel ; une mêm
 image présente dans deux splits est marquée `FAIL` (fuite de données).
 
 Rapport : [`docs/data/levircd_quality_report.md`](docs/data/levircd_quality_report.md).
+
+## Baselines (Sprint 2)
+
+```bash
+python -m pixelmind.experiments.baselines            # tous les modèles
+python -m pixelmind.experiments.baselines --models normdiff gbm
+python -m pixelmind.experiments.report               # regénère le rapport comparatif
+```
+
+Protocole commun à tous les modèles (`pixelmind.evaluation.protocol`) : seuil choisi
+sur **val** uniquement, métriques pixel sur **test** (précision, rappel, F1/Dice, IoU,
+PR-AUC), par scène, et analyse d'erreurs par quantité de changement. Les métriques sont
+cumulées par histogramme de scores et ne demandent donc que très peu de RAM.
+
+Rapport comparatif (baselines + DL) : [`docs/experiments/levircd_benchmark.md`](docs/experiments/levircd_benchmark.md).
+
+## Deep Learning (Sprint 3)
+
+U-Net (T1 et T2 concaténées, 6 canaux) et Siamese U-Net (encodeur partagé, fusion
+`|f1 − f2|` ou concaténation à chaque échelle), loss BCE + Dice, AdamW + cosine,
+early stopping sur le F1 de validation, suivi MLflow (SQLite).
+
+```bash
+# local, CPU : vérifie le pipeline (pas la qualité)
+python -m pixelmind.models.dl.train --config configs/smoke_cpu.yaml
+# GPU (Kaggle/Colab) : notebooks/03_train_dl_kaggle.ipynb, ou directement
+python -m pixelmind.models.dl.train --config configs/siamese_unet.yaml --set epochs=50
+python -m pixelmind.experiments.evaluate_checkpoint artifacts/models/siamese_unet_diff_best.pt
+mlflow ui --backend-store-uri sqlite:///artifacts/models/mlflow.db
+```
+
+Pourquoi entraîner sur Kaggle : voir [ADR 0003](docs/adr/0003-entrainement-dl-sur-gpu-distant.md).
 
 Avec Docker :
 

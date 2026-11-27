@@ -1,0 +1,15 @@
+# DL 1 – U-Net, T1/T2 concatenated (6 channels). Sized for a 16 GB GPU (Kaggle T4).
+model: unet
+base_width: 32
+crop: 256
+crops_per_image: 8
+batch_size: 16
+epochs: 100
+lr: 0.001
+weight_decay: 0.0001
+dice_weight: 1.0
+patience: 15
+num_workers: 4
+cache: true
+tile: 512
+seed: 42
