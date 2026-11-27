@@ -14,7 +14,8 @@ COPY app ./app
 COPY docs ./docs
 
 # run as an unprivileged user; artifacts/ is a mounted volume
-RUN useradd --create-home --uid 1000 pixelmind
+RUN useradd --create-home --uid 1000 pixelmind \
+    && mkdir -p /app/artifacts && chown pixelmind:pixelmind /app/artifacts
 USER pixelmind
 
 ENV PIXELMIND_ARTIFACTS_DIR=/app/artifacts
