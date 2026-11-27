@@ -3,7 +3,12 @@
 uvicorn pixelmind.api.main:app
 """
 
+import json
+import logging
+import re
+import secrets
 import threading
+import time
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -18,17 +23,25 @@ from pixelmind.api.schemas import (
     AnalysisResult,
     AnalysisSummary,
     AnswerResult,
+    AuditTrail,
     Health,
     ModelList,
+    Monitoring,
     QuestionRequest,
     ReviewRequest,
     WorkflowRequest,
     WorkflowSummary,
     WorkflowView,
 )
+from pixelmind.monitoring.report import build_monitoring
 from pixelmind.rag.generator import GenerationError
+from pixelmind.rag.service import QALog
 from pixelmind.services.analysis import AnalysisRejected, AnalysisService, InputError, Upload
 from pixelmind.settings import Settings
+
+log = logging.getLogger("pixelmind.access")
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+PUBLIC_PATHS = {"/api/v1/health"}
 
 
 def qa_for(state):
@@ -48,6 +61,11 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         app.state.qa = qa_service  # built on first question: loads the embedding model
         app.state.qa_lock = threading.Lock()
         svc = app.state.service
+        if not svc.settings.api_keys:
+            logging.getLogger("pixelmind").warning(
+                "PIXELMIND_API_KEYS is not set: the API is open (local demo only)"
+            )
+        app.state.qa_log = QALog(svc.settings.rag_dir / "qa_log.db")
         app.state.workflow = ReviewWorkflow(
             svc.store,
             svc.settings.analyses_dir,
@@ -57,13 +75,52 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         yield
         app.state.workflow.close()
 
+    def authenticate(request: Request) -> None:
+        """X-API-Key -> actor name, recorded in the audit trail (dossier §10.4–10.5)."""
+        keys = request.app.state.service.settings.api_keys
+        if not keys:
+            request.state.actor = "anonymous"
+            return
+        if request.url.path in PUBLIC_PATHS:
+            request.state.actor = "public"
+            return
+        given = request.headers.get("x-api-key", "")
+        for name, key in keys.items():
+            if secrets.compare_digest(given.encode(), key.encode()):
+                request.state.actor = name
+                return
+        raise HTTPException(401, "missing or invalid X-API-Key",
+                            headers={"WWW-Authenticate": "ApiKey"})  # fmt: skip
+
     app = FastAPI(
         title="PIXELMIND API",
         version=__version__,
         description="Détection de changements de bâtiments entre deux images (T1/T2). "
         "Les résultats sont des signaux d'aide à l'analyse, à vérifier par un humain.",
         lifespan=lifespan,
+        dependencies=[Depends(authenticate)],
     )
+
+    @app.middleware("http")
+    async def access_log(request: Request, call_next):
+        """One JSON log line per request, with a request id echoed in X-Request-ID."""
+        rid = request.headers.get("x-request-id", "")
+        rid = rid if _REQUEST_ID.match(rid) else secrets.token_hex(8)
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        log.info(json.dumps({
+            "request_id": rid, "method": request.method, "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": round((time.perf_counter() - t0) * 1000, 1),
+            "actor": getattr(request.state, "actor", None),
+        }))  # fmt: skip
+        return response
+
+    def get_actor(request: Request) -> str:
+        return request.state.actor
+
+    Actor = Annotated[str, Depends(get_actor)]
 
     def get_service(request: Request) -> AnalysisService:
         return request.app.state.service
@@ -116,6 +173,7 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         t1: Annotated[UploadFile, File(description="Image at date T1 (PNG, JPEG or TIFF, RGB)")],
         t2: Annotated[UploadFile, File(description="Image at date T2, same size and area")],
         svc: Service,
+        actor: Actor,
         reference_mask: Annotated[UploadFile | None, File(description="Ground truth")] = None,
         model: Annotated[str | None, Form(description="Model (default: best on test)")] = None,
         gsd_m: Annotated[float | None, Form(description="Ground sample distance, m/px")] = None,
@@ -123,7 +181,7 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         uploads = [await read_upload(f, svc) for f in (t1, t2)]
         ref = await read_upload(reference_mask, svc) if reference_mask else None
         try:
-            return await run_in_threadpool(svc.analyze, *uploads, ref, model, gsd_m)
+            return await run_in_threadpool(svc.analyze, *uploads, ref, model, gsd_m, actor)
         except InputError as exc:
             raise HTTPException(exc.status_code, str(exc)) from None
         except AnalysisRejected as exc:
@@ -149,30 +207,36 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         return FileResponse(path, media_type=media)
 
     @app.post("/api/v1/questions", response_model=AnswerResult)
-    def ask_docs(body: QuestionRequest, request: Request) -> dict:
+    def ask_docs(body: QuestionRequest, request: Request, actor: Actor) -> dict:
         """Question on the project documentation, answered with citations."""
         return ask(get_qa(request), body.question, mode=body.mode, k=body.k,
-                   doc_types=body.doc_types)  # fmt: skip
+                   doc_types=body.doc_types, asked_by=actor)  # fmt: skip
 
     @app.post("/api/v1/analyses/{analysis_id}/questions", response_model=AnswerResult)
     def ask_analysis(
-        analysis_id: str, body: AnalysisQuestionRequest, request: Request, svc: Service
+        analysis_id: str,
+        body: AnalysisQuestionRequest,
+        request: Request,
+        svc: Service,
+        actor: Actor,
     ) -> dict:
         """Question on one analysis: its measured results plus the documentation."""
         result = svc.store.get(analysis_id)
         if result is None:
             raise HTTPException(404, "analysis not found")
-        return ask(get_qa(request), body.question, analysis=result)
+        return ask(get_qa(request), body.question, analysis=result, asked_by=actor)
 
     # --- agents workflow (Sprint 6) -----------------------------------------
 
     @app.post("/api/v1/analyses/{analysis_id}/workflows", response_model=WorkflowView,
               status_code=201)  # fmt: skip
-    def start_workflow(analysis_id: str, body: WorkflowRequest, svc: Service, wf: Workflow) -> dict:
+    def start_workflow(
+        analysis_id: str, body: WorkflowRequest, svc: Service, wf: Workflow, actor: Actor
+    ) -> dict:
         """Quality gate, optional sourced explanation, human review if needed, report."""
         if svc.store.get(analysis_id) is None:
             raise HTTPException(404, "analysis not found")
-        return wf.start(analysis_id, body.explain, body.question)
+        return wf.start(analysis_id, body.explain, body.question, requested_by=actor)
 
     @app.get("/api/v1/analyses/{analysis_id}/workflows", response_model=list[WorkflowSummary])
     def analysis_workflows(analysis_id: str, wf: Workflow) -> list:
@@ -190,9 +254,9 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         return view
 
     @app.post("/api/v1/workflows/{workflow_id}/review", response_model=WorkflowView)
-    def submit_review(workflow_id: str, body: ReviewRequest, wf: Workflow) -> dict:
+    def submit_review(workflow_id: str, body: ReviewRequest, wf: Workflow, actor: Actor) -> dict:
         try:
-            return wf.review(workflow_id, body.model_dump())
+            return wf.review(workflow_id, {**body.model_dump(), "submitted_by": actor})
         except KeyError:
             raise HTTPException(404, "workflow not found") from None
         except ValueError as exc:
@@ -204,9 +268,29 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         path = svc.settings.rag_dir / "index_manifest.json"
         if not path.exists():
             raise HTTPException(404, "index RAG absent")
-        import json
-
         return json.loads(path.read_text())
+
+    # --- governance (Sprint 7) ----------------------------------------------
+
+    @app.get("/api/v1/monitoring", response_model=Monitoring)
+    def monitoring(request: Request, svc: Service, wf: Workflow) -> dict:
+        """Data quality, model outputs, latency, reviews, RAG usage and cost, input drift."""
+        return build_monitoring(
+            svc.store.results(),
+            wf.index.list(limit=5000),
+            request.app.state.qa_log.results(),
+            svc.settings.reference_stats,
+        )
+
+    @app.get("/api/v1/analyses/{analysis_id}/audit", response_model=AuditTrail)
+    def audit(analysis_id: str, request: Request, svc: Service, wf: Workflow) -> dict:
+        """Everything needed to rebuild a result without the conversation (dossier §10.5)."""
+        result = svc.store.get(analysis_id)
+        if result is None:
+            raise HTTPException(404, "analysis not found")
+        flows = [wf.get(w["workflow_id"]) for w in wf.index.list(analysis_id)]
+        questions = request.app.state.qa_log.results(analysis_id=analysis_id)
+        return {"analysis": result, "workflows": [f for f in flows if f], "questions": questions}
 
     return app
 

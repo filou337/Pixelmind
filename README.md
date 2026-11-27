@@ -9,7 +9,7 @@ Décisions : [`docs/adr/`](docs/adr/).
 
 ## Statut
 
-Sprint 6 (Agents & UI) : workflow LangGraph avec revue humaine et rapport, interface Streamlit. Sprint 3 : entraînement GPU à lancer sur Kaggle.
+Version **0.1.0** de démonstration ([CHANGELOG](CHANGELOG.md)). Reste à faire : l'entraînement GPU du Sprint 3, sur Kaggle.
 
 | Sprint | Contenu | Statut |
 |---|---|---|
@@ -20,7 +20,7 @@ Sprint 6 (Agents & UI) : workflow LangGraph avec revue humaine et rapport, inter
 | S4 | API d'analyse, stockage | ✅ |
 | S5 | RAG (Qdrant + Claude) | ✅ |
 | S6 | Agents (LangGraph) + Streamlit | ✅ |
-| S7 | Gouvernance / MLOps | |
+| S7 | Gouvernance / MLOps | ✅ |
 
 ## Démarrage
 
@@ -161,6 +161,21 @@ Après chaque analyse, un **workflow LangGraph** :
 | `GET /api/v1/analyses/{id}/artifacts/report.md` | Rapport |
 
 Choix d'architecture : [ADR 0006](docs/adr/0006-agents-langgraph-et-interface.md).
+
+## Gouvernance et exploitation (Sprint 7)
+
+- **Clés d'API** : `PIXELMIND_API_KEYS=alice:<clé>,…`, à envoyer dans l'en-tête
+  `X-API-Key`. Le nom de la clé est enregistré comme auteur de chaque analyse, question
+  et revue.
+- `GET /api/v1/monitoring` : qualité des données, sorties des modèles, latences, revues,
+  usage et coût du LLM, **dérive des entrées** par rapport à LEVIR-CD train (PSI et test
+  χ²). Ces indicateurs s'affichent dans la page Gouvernance.
+- `GET /api/v1/analyses/{id}/audit` : historique complet d'un résultat.
+- CI : lint, tests, `pip-audit`, construction de l'image, scan Trivy, test de démarrage.
+  Elle tourne aussi chaque semaine, et Dependabot propose les mises à jour.
+- [Runbook](docs/runbook.md) : démarrage, sauvegarde, publication et retour arrière d'un
+  modèle, incidents. Choix d'architecture :
+  [ADR 0007](docs/adr/0007-gouvernance-monitoring-derive.md).
 
 ## Structure
 

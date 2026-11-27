@@ -1,7 +1,7 @@
 """Runtime settings, read from environment variables (see .env.example)."""
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -24,6 +24,9 @@ class Settings:
     # 0.45 measured in rag_eval.md (thin margin): borderline cases go to the LLM, which is
     # instructed to abstain when the passages do not answer.
     rag_min_score: float = 0.40
+    # Sprint 7: API keys {name: key}; empty = open API (local demo only)
+    api_keys: dict[str, str] = field(default_factory=dict)
+    reference_stats: Path = Path("docs/data/levircd_reference_stats.json")
 
     @property
     def analyses_dir(self) -> Path:
@@ -48,4 +51,17 @@ class Settings:
             rag_mode=env("PIXELMIND_RAG_MODE", cls.rag_mode),
             rag_k=int(env("PIXELMIND_RAG_K", cls.rag_k)),
             rag_min_score=float(env("PIXELMIND_RAG_MIN_SCORE", cls.rag_min_score)),
+            api_keys=parse_api_keys(env("PIXELMIND_API_KEYS", "")),
+            reference_stats=Path(env("PIXELMIND_REFERENCE_STATS", str(cls.reference_stats))),
         )
+
+
+def parse_api_keys(raw: str) -> dict[str, str]:
+    """'alice:key1,bob:key2' -> {'alice': 'key1', 'bob': 'key2'}."""
+    keys = {}
+    for item in filter(None, (x.strip() for x in raw.split(","))):
+        name, sep, key = item.partition(":")
+        if not sep or not name or len(key) < 16:
+            raise ValueError("PIXELMIND_API_KEYS: expected name:key pairs, keys >= 16 chars")
+        keys[name] = key
+    return keys

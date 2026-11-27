@@ -256,6 +256,7 @@ def test_service_abstains_without_llm_call_when_nothing_relevant(retriever, tmp_
     # with an analysis, its facts are still available to answer
     r = qa.ask("combien de régions ?", analysis=ANALYSIS)
     assert gen.calls == 1 and r["citations"][0]["source"] == "analysis:pm_20261127_0000abcd"
+    assert not r["generation"]["llm_called"]  # extractive generator: no LLM involved
 
 
 @pytest.fixture

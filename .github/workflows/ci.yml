@@ -4,21 +4,47 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly: catch newly published vulnerabilities
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
+      - run: python -m pip install --upgrade pip setuptools wheel
       # CPU-only torch wheel (~200 MB instead of ~2 GB of CUDA libraries)
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" pip-audit
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
         env:
           MLFLOW_DISABLE_AGENT_HINT: "1"
+      - name: Dependency vulnerabilities (PyPI advisories)
+        run: pip-audit --skip-editable
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v6
+      - run: docker build -t pixelmind-api .
+      - name: Image scan (fixable HIGH/CRITICAL fail the build)
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/src:ro" aquasec/trivy:latest
+          image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed
+          --ignorefile /src/.trivyignore
+          --exit-code 1 pixelmind-api
+      - name: Smoke test
+        run: |
+          docker run -d --name api -p 8000:8000 pixelmind-api
+          for i in $(seq 1 60); do curl -sf localhost:8000/api/v1/health && exit 0; sleep 1; done
+          docker logs api; exit 1

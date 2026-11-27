@@ -1,0 +1,7 @@
+# Accepted findings: justify each one and set a review date (runbook: review monthly).
+
+# setuptools 70.3.0 listed in pip/_vendor/vendor.txt: pip vendors only pkg_resources from it.
+# CVE-2025-47273 is a path traversal in setuptools.package_index (PackageIndex), which pip
+# does not vendor and PIXELMIND never calls. The installed setuptools is >= 84 (not affected).
+# Review: 2027-02-28, or when pip updates its vendored copy.
+CVE-2025-47273 exp:2027-02-28

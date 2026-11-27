@@ -13,9 +13,61 @@ page("Gouvernance", "🧭")
 try:
     models = api.get("/api/v1/models")
     workflows = api.get("/api/v1/workflows", limit=500)
+    mon = api.get("/api/v1/monitoring")
 except api.ApiError as exc:
     show_error(exc)
     st.stop()
+
+
+def pct(x):
+    return "–" if x is None else f"{x:.0%}"
+
+
+st.subheader("Monitoring")
+dq, md, sv, rv, rag = mon["data_quality"], mon["model"], mon["service"], mon["review"], mon["rag"]
+c = st.columns(5)
+c[0].metric("Analyses", dq["analyses"])
+c[1].metric(
+    "Rejet qualité",
+    pct((dq["quality_status"].get("FAIL") or {}).get("share", 0)) if dq["analyses"] else "–",
+)
+c[2].metric(
+    "Latence p95",
+    f"{sv['analysis_latency_s']['p95']} s" if sv["analysis_latency_s"]["p95"] is not None else "–",
+)
+c[3].metric("Taux de revue", pct(rv["review_rate"]))
+cost = rag["estimated_cost_usd"]
+c[4].metric(
+    "Coût LLM estimé",
+    f"{cost:.2f} $" if cost is not None else "–",
+    help=f"{rag['llm_calls']} appels, {rag['tokens']['input']:,} tokens en entrée, "
+    f"{rag['tokens']['output']:,} en sortie (tarifs publics 2026-11, estimation)",
+)
+left, right = st.columns(2)
+with left:
+    st.markdown("**Qualité des données**")
+    st.dataframe(pd.DataFrame(dq["quality_status"]).T, width="stretch")
+    st.markdown(
+        f"Masques vides : {pct(md['empty_mask_rate'])} · plus de 50 % changé : "
+        f"{pct(md['over_half_changed_rate'])} · abstention RAG : "
+        f"{pct(rag['abstention_rate'])}"
+    )
+with right:
+    drift = mon["drift"]
+    st.markdown("**Dérive des entrées** (PSI contre LEVIR-CD train)")
+    if drift["status"] == "insufficient_data":
+        st.info(f"{drift['n']} analyses : au moins {drift['min_n']} sont nécessaires.")
+    elif drift["status"] == "no_reference":
+        st.info("Statistiques de référence absentes (python -m pixelmind.monitoring.drift).")
+    else:
+        if drift["alert"]:
+            st.error(drift["action"])
+        st.dataframe(
+            pd.DataFrame(drift["features"]).T[
+                ["label", "psi", "level", "reference_mean", "current_mean"]
+            ],
+            width="stretch",
+        )
 
 st.subheader("Modèles servis")
 st.caption(

@@ -83,6 +83,14 @@ class QALog:
                 "created_at TEXT, analysis_id TEXT, abstained INTEGER, result TEXT)"
             )
 
+    def results(self, analysis_id: str | None = None, limit: int = 1000) -> list[dict]:
+        q, args = "SELECT result FROM questions", ()
+        if analysis_id:
+            q, args = q + " WHERE analysis_id = ?", (analysis_id,)
+        with closing(sqlite3.connect(self.db_path)) as con:
+            rows = con.execute(q + " ORDER BY created_at DESC LIMIT ?", (*args, limit)).fetchall()
+        return [json.loads(r[0]) for r in rows]
+
     def save(self, r: dict) -> None:
         with closing(sqlite3.connect(self.db_path)) as con, con:
             con.execute(
@@ -102,7 +110,7 @@ class QAService:
 
     def ask(
         self, question: str, analysis: dict | None = None, mode: str | None = None,
-        k: int | None = None, doc_types: list[str] | None = None,
+        k: int | None = None, doc_types: list[str] | None = None, asked_by: str = "anonymous",
     ) -> dict:  # fmt: skip
         t0 = time.perf_counter()
         mode, k = mode or self.mode, k or self.k
@@ -122,6 +130,7 @@ class QAService:
             "question_id": f"q_{datetime.now(UTC):%Y%m%d}_{secrets.token_hex(4)}",
             "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "question": question,
+            "asked_by": asked_by,
             "analysis_id": analysis["analysis_id"] if analysis else None,
             "answer": answer.text,
             "abstained": answer.abstained,
@@ -149,7 +158,8 @@ class QAService:
                 "prompt_version": PROMPT_VERSION,
                 "stop_reason": answer.stop_reason,
                 "usage": answer.usage,
-                "llm_called": bool(sources),
+                # extractive mode answers without any LLM
+                "llm_called": bool(sources) and answer.provider != "extractive",
             },  # fmt: skip
             "index": {
                 k: self.index_manifest.get(k)

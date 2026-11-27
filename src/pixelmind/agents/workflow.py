@@ -49,6 +49,7 @@ def _step(node: str, **details) -> list[dict]:
 class WorkflowState(TypedDict, total=False):
     workflow_id: str
     analysis_id: str
+    requested_by: str
     explain: bool
     question: str | None
     analysis: dict
@@ -83,26 +84,35 @@ class WorkflowStore:
         with closing(sqlite3.connect(db_path)) as con, con:
             con.execute(
                 "CREATE TABLE IF NOT EXISTS workflows (workflow_id TEXT PRIMARY KEY, "
-                "analysis_id TEXT, created_at TEXT, updated_at TEXT, status TEXT)"
+                "analysis_id TEXT, created_at TEXT, updated_at TEXT, status TEXT, "
+                "review_decision TEXT)"
             )
+            try:  # databases created before Sprint 7
+                con.execute("ALTER TABLE workflows ADD COLUMN review_decision TEXT")
+            except sqlite3.OperationalError:
+                pass
 
-    def upsert(self, workflow_id: str, analysis_id: str, status: str) -> None:
+    def upsert(self, workflow_id: str, analysis_id: str, status: str,
+               review_decision: str | None = None) -> None:  # fmt: skip
         now = _now()
         with closing(sqlite3.connect(self.db_path)) as con, con:
             con.execute(
-                "INSERT INTO workflows VALUES (?, ?, ?, ?, ?) ON CONFLICT(workflow_id) "
-                "DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at",
-                (workflow_id, analysis_id, now, now, status),
+                "INSERT INTO workflows VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(workflow_id) "
+                "DO UPDATE SET status = excluded.status, updated_at = excluded.updated_at, "
+                "review_decision = COALESCE(excluded.review_decision, review_decision)",
+                (workflow_id, analysis_id, now, now, status, review_decision),
             )
 
     def list(self, analysis_id: str | None = None, limit: int = 50) -> list[dict]:
-        q = "SELECT workflow_id, analysis_id, created_at, updated_at, status FROM workflows"
+        q = ("SELECT workflow_id, analysis_id, created_at, updated_at, status, review_decision "
+             "FROM workflows")  # fmt: skip
         args: tuple = ()
         if analysis_id:
             q, args = q + " WHERE analysis_id = ?", (analysis_id,)
         with closing(sqlite3.connect(self.db_path)) as con:
             rows = con.execute(q + " ORDER BY created_at DESC LIMIT ?", (*args, limit)).fetchall()
-        keys = ("workflow_id", "analysis_id", "created_at", "updated_at", "status")
+        keys = ("workflow_id", "analysis_id", "created_at", "updated_at", "status",
+                "review_decision")  # fmt: skip
         return [dict(zip(keys, r, strict=True)) for r in rows]
 
 
@@ -128,7 +138,11 @@ class ReviewWorkflow:
     def _research(self, state: WorkflowState) -> dict:
         question = state.get("question") or DEFAULT_QUESTION
         try:
-            r = self.qa_factory().ask(question, analysis=state["analysis"])
+            r = self.qa_factory().ask(
+                question,
+                analysis=state["analysis"],
+                asked_by=state.get("requested_by", "anonymous"),
+            )
         except (GenerationError, FileNotFoundError) as exc:
             msg = f"explication documentaire indisponible : {exc}"
             return {"research": None, "warnings": [msg], "trace": _step("research", ok=False)}
@@ -165,7 +179,8 @@ class ReviewWorkflow:
         return {"status": status, "report_uri": uri, "trace": _step("report")}
 
     def _persist(self, state: WorkflowState) -> dict:
-        self.index.upsert(state["workflow_id"], state["analysis_id"], state["status"])
+        decision = (state.get("review") or {}).get("decision")
+        self.index.upsert(state["workflow_id"], state["analysis_id"], state["status"], decision)
         return {"trace": _step("persist")}
 
     # --- graph -------------------------------------------------------------
@@ -201,11 +216,13 @@ class ReviewWorkflow:
     def _config(workflow_id: str) -> dict:
         return {"configurable": {"thread_id": workflow_id}}
 
-    def start(self, analysis_id: str, explain: bool = False, question: str | None = None) -> dict:
+    def start(self, analysis_id: str, explain: bool = False, question: str | None = None,
+              requested_by: str = "anonymous") -> dict:  # fmt: skip
         wid = f"wf_{datetime.now(UTC):%Y%m%d}_{secrets.token_hex(4)}"
         self.index.upsert(wid, analysis_id, "running")
         init = {"workflow_id": wid, "analysis_id": analysis_id, "explain": explain,
-                "question": question, "warnings": [], "trace": []}  # fmt: skip
+                "question": question, "requested_by": requested_by, "warnings": [],
+                "trace": []}  # fmt: skip
         self.graph.invoke(init, self._config(wid))
         return self.get(wid)
 
@@ -232,6 +249,7 @@ class ReviewWorkflow:
         return {
             "workflow_id": workflow_id,
             "analysis_id": v["analysis_id"],
+            "requested_by": v.get("requested_by", "anonymous"),
             "status": status,
             "pending_review": pending[0] if pending else None,
             "gate": v.get("gate"),

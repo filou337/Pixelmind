@@ -1,6 +1,10 @@
 FROM python:3.12-slim
 
 WORKDIR /app
+# security updates of the base image + up-to-date packaging tools (Trivy findings)
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade pip setuptools wheel
 # CPU-only torch: lets the API serve deep-learning checkpoints without CUDA libraries
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 COPY pyproject.toml README.md ./

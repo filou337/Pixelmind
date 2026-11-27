@@ -27,6 +27,7 @@ from pixelmind.data.quality import (
 )
 from pixelmind.evaluation.metrics import counts_at, metrics_from_counts
 from pixelmind.models.registry import ModelRegistry
+from pixelmind.monitoring.drift import image_stats
 from pixelmind.services import postprocess
 from pixelmind.services.store import AnalysisStore
 from pixelmind.settings import Settings
@@ -121,7 +122,7 @@ class AnalysisService:
 
     def analyze(
         self, t1: Upload, t2: Upload, reference_mask: Upload | None = None,
-        model: str | None = None, gsd_m: float | None = None,
+        model: str | None = None, gsd_m: float | None = None, requested_by: str = "anonymous",
     ) -> dict:  # fmt: skip
         t_start = time.perf_counter()
         try:
@@ -152,6 +153,7 @@ class AnalysisService:
             "quality_issues": [i.to_dict() for i in issues],
             "model": {k: v for k, v in entry.summary().items() if k != "test_metrics"},
             "model_test_metrics": entry.summary()["test_metrics"],
+            "requested_by": requested_by,
             "parameters": {"min_region_px": self.settings.min_region_px, "gsd_m": gsd_m},
             "limitations": LIMITATIONS,
         }
@@ -169,6 +171,7 @@ class AnalysisService:
             raise AnalysisRejected(result)
 
         a, b = arrays["t1"], arrays["t2"]
+        result["input_stats"] = image_stats(a, b)  # for drift monitoring
         t_inf = time.perf_counter()
         scores = entry.scorer()(a, b)
         inference_s = time.perf_counter() - t_inf

@@ -95,6 +95,8 @@ class AnalysisResult(BaseModel):
     limitations: list[str]
     artifacts: dict[str, str]
     timings: dict[str, float]
+    requested_by: str = "anonymous"
+    input_stats: dict[str, float] | None = None  # drift monitoring
 
 
 class AnalysisSummary(BaseModel):
@@ -167,6 +169,7 @@ class AnswerResult(BaseModel):
     question_id: str
     created_at: str
     question: str
+    asked_by: str = "anonymous"
     analysis_id: str | None
     answer: str
     abstained: bool
@@ -202,11 +205,13 @@ class WorkflowSummary(BaseModel):
     created_at: str
     updated_at: str
     status: str
+    review_decision: str | None = None
 
 
 class WorkflowView(BaseModel):
     workflow_id: str
     analysis_id: str
+    requested_by: str = "anonymous"
     status: Literal["running", "awaiting_review", "completed", "rejected"]
     pending_review: dict | None
     gate: dict | None
@@ -215,3 +220,18 @@ class WorkflowView(BaseModel):
     report_uri: str | None
     warnings: list[str]
     trace: list[dict]
+
+
+class Monitoring(BaseModel):
+    data_quality: dict
+    model: dict
+    service: dict
+    review: dict
+    rag: dict
+    drift: dict
+
+
+class AuditTrail(BaseModel):
+    analysis: AnalysisResult
+    workflows: list[WorkflowView]
+    questions: list[AnswerResult]

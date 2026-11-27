@@ -6,6 +6,7 @@ import requests
 
 API_URL = os.environ.get("PIXELMIND_API_URL", "http://localhost:8000").rstrip("/")
 TIMEOUT = 300  # analyses and LLM answers can take a while on CPU
+API_KEY = os.environ.get("PIXELMIND_API_KEY")  # when the API requires X-API-Key
 
 
 class ApiError(RuntimeError):
@@ -16,7 +17,8 @@ class ApiError(RuntimeError):
 
 def _call(method: str, path: str, **kwargs):
     try:
-        r = requests.request(method, f"{API_URL}{path}", timeout=TIMEOUT, **kwargs)
+        headers = {"X-API-Key": API_KEY} if API_KEY else {}
+        r = requests.request(method, f"{API_URL}{path}", timeout=TIMEOUT, headers=headers, **kwargs)
     except requests.RequestException as exc:
         raise ApiError(0, f"API injoignable ({API_URL}) : {exc.__class__.__name__}") from None
     if r.status_code == 422 and r.headers.get("content-type", "").startswith("application/json"):

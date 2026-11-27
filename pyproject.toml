@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pixelmind"
-version = "0.0.1"
+version = "0.1.0"
 description = "Multimodal Geospatial Intelligence Platform – building change detection"
 readme = "README.md"
 requires-python = ">=3.11"

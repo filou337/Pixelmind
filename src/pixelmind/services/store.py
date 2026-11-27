@@ -59,3 +59,11 @@ class AnalysisStore:
             ).fetchall()
         keys = ("analysis_id", "created_at", "status", "quality_status", "model_name")
         return [dict(zip(keys, r, strict=True)) for r in rows]
+
+    def results(self, limit: int = 1000) -> list[dict]:
+        """Most recent full results (monitoring)."""
+        with closing(self._connect()) as con:
+            rows = con.execute(
+                "SELECT result FROM analyses ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [json.loads(r[0]) for r in rows]
