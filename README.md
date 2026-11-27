@@ -9,7 +9,7 @@ Décisions : [`docs/adr/`](docs/adr/).
 
 ## Statut
 
-Sprint 5 (RAG) : questions sur la documentation et sur une analyse, réponses sourcées par Claude. Sprint 3 : entraînement GPU à lancer sur Kaggle.
+Sprint 6 (Agents & UI) : workflow LangGraph avec revue humaine et rapport, interface Streamlit. Sprint 3 : entraînement GPU à lancer sur Kaggle.
 
 | Sprint | Contenu | Statut |
 |---|---|---|
@@ -19,7 +19,7 @@ Sprint 5 (RAG) : questions sur la documentation et sur une analyse, réponses so
 | S3 | U-Net, Siamese U-Net, MLflow | ⏳ code prêt, entraînement GPU à lancer |
 | S4 | API d'analyse, stockage | ✅ |
 | S5 | RAG (Qdrant + Claude) | ✅ |
-| S6 | Agents (LangGraph) + Streamlit | |
+| S6 | Agents (LangGraph) + Streamlit | ✅ |
 | S7 | Gouvernance / MLOps | |
 
 ## Démarrage
@@ -136,10 +136,38 @@ Pour fonctionner sans LLM : `PIXELMIND_LLM_PROVIDER=extractive`.
 Évaluation : [`docs/experiments/rag_eval.md`](docs/experiments/rag_eval.md). Choix
 d'architecture : [ADR 0005](docs/adr/0005-rag-documentaire.md).
 
+## Démonstration : agents et interface (Sprint 6)
+
+```bash
+docker compose up --build     # API → http://localhost:8000/docs · interface → http://localhost:8501
+# ou en local :
+uvicorn pixelmind.api.main:app &
+streamlit run app/Accueil.py
+```
+
+L'interface compte quatre pages : Accueil, Nouvelle analyse, Recherche IA, Gouvernance.
+Après chaque analyse, un **workflow LangGraph** :
+1. contrôle la qualité ;
+2. demande, en option, une explication sourcée au RAG ;
+3. s'arrête pour une **revue humaine** si nécessaire (Valider, Valider avec corrections,
+   Rejeter, avec des retours par région) ;
+4. produit un **rapport Markdown** traçable.
+
+| Route | Usage |
+|---|---|
+| `POST /api/v1/analyses/{id}/workflows` | `{"explain": true}` : lance le workflow |
+| `GET /api/v1/workflows/{id}` | État, raisons de la revue, explication, lien du rapport |
+| `POST /api/v1/workflows/{id}/review` | `{"decision": "approved", "reviewer": "…", "comment": "…", "region_feedback": [...]}` |
+| `GET /api/v1/analyses/{id}/artifacts/report.md` | Rapport |
+
+Choix d'architecture : [ADR 0006](docs/adr/0006-agents-langgraph-et-interface.md).
+
 ## Structure
 
 ```
-src/pixelmind/   code applicatif (api/, puis data/, models/, evaluation/, rag/, agents/…)
+src/pixelmind/   code applicatif (api/, data/, models/, evaluation/, services/, rag/, agents/)
+app/             interface Streamlit (client de l'API, sans logique métier)
+configs/         configs d'entraînement, corpus RAG et jeu d'évaluation
 tests/           tests unitaires et d'intégration
 docs/            dossier d'architecture, ADR, model cards
 data/, artifacts/  locaux, ignorés par Git

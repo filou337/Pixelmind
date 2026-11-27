@@ -1,11 +1,25 @@
 services:
   api:
     build: .
+    image: pixelmind-api
     ports:
       - "8000:8000"
     env_file:
       - path: .env
         required: false
     volumes:
-      # models (experiments/levircd, models/) are read from here, analyses are written here
+      # models, RAG index and workflows are read from here; analyses are written here
       - ./artifacts:/app/artifacts
+
+  ui:
+    image: pixelmind-api   # same image, Streamlit entry point
+    depends_on:
+      - api
+    ports:
+      - "8501:8501"
+    environment:
+      PIXELMIND_API_URL: http://api:8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+    command: ["streamlit", "run", "app/Accueil.py", "--server.address=0.0.0.0",
+              "--server.port=8501", "--server.headless=true", "--browser.gatherUsageStats=false"]

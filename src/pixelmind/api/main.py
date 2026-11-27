@@ -12,6 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 
 from pixelmind import __version__
+from pixelmind.agents.workflow import ReviewWorkflow
 from pixelmind.api.schemas import (
     AnalysisQuestionRequest,
     AnalysisResult,
@@ -20,10 +21,24 @@ from pixelmind.api.schemas import (
     Health,
     ModelList,
     QuestionRequest,
+    ReviewRequest,
+    WorkflowRequest,
+    WorkflowSummary,
+    WorkflowView,
 )
 from pixelmind.rag.generator import GenerationError
 from pixelmind.services.analysis import AnalysisRejected, AnalysisService, InputError, Upload
 from pixelmind.settings import Settings
+
+
+def qa_for(state):
+    """QA service of the app, built once on first use (loads the embedding model)."""
+    with state.qa_lock:
+        if state.qa is None:
+            from pixelmind.rag.service import build_qa_service
+
+            state.qa = build_qa_service(state.service.settings)
+    return state.qa
 
 
 def create_app(service: AnalysisService | None = None, qa_service=None) -> FastAPI:
@@ -32,7 +47,15 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         app.state.service = service or AnalysisService.from_settings(Settings.from_env())
         app.state.qa = qa_service  # built on first question: loads the embedding model
         app.state.qa_lock = threading.Lock()
+        svc = app.state.service
+        app.state.workflow = ReviewWorkflow(
+            svc.store,
+            svc.settings.analyses_dir,
+            lambda: qa_for(app.state),
+            svc.settings.artifacts_dir / "workflows" / "workflows.db",
+        )
         yield
+        app.state.workflow.close()
 
     app = FastAPI(
         title="PIXELMIND API",
@@ -48,16 +71,15 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
     Service = Annotated[AnalysisService, Depends(get_service)]
 
     def get_qa(request: Request):
-        state = request.app.state
-        with state.qa_lock:
-            if state.qa is None:
-                from pixelmind.rag.service import build_qa_service
+        try:
+            return qa_for(request.app.state)
+        except FileNotFoundError as exc:
+            raise HTTPException(503, str(exc)) from None
 
-                try:
-                    state.qa = build_qa_service(state.service.settings)
-                except FileNotFoundError as exc:
-                    raise HTTPException(503, str(exc)) from None
-        return state.qa
+    def get_workflow(request: Request) -> ReviewWorkflow:
+        return request.app.state.workflow
+
+    Workflow = Annotated[ReviewWorkflow, Depends(get_workflow)]
 
     def ask(qa, question: str, **kwargs) -> dict:
         try:
@@ -123,7 +145,8 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         path = svc.artifact_path(analysis_id, name)
         if path is None:
             raise HTTPException(404, "artifact not found")
-        return FileResponse(path, media_type="image/png")
+        media = "text/markdown; charset=utf-8" if name.endswith(".md") else "image/png"
+        return FileResponse(path, media_type=media)
 
     @app.post("/api/v1/questions", response_model=AnswerResult)
     def ask_docs(body: QuestionRequest, request: Request) -> dict:
@@ -140,6 +163,50 @@ def create_app(service: AnalysisService | None = None, qa_service=None) -> FastA
         if result is None:
             raise HTTPException(404, "analysis not found")
         return ask(get_qa(request), body.question, analysis=result)
+
+    # --- agents workflow (Sprint 6) -----------------------------------------
+
+    @app.post("/api/v1/analyses/{analysis_id}/workflows", response_model=WorkflowView,
+              status_code=201)  # fmt: skip
+    def start_workflow(analysis_id: str, body: WorkflowRequest, svc: Service, wf: Workflow) -> dict:
+        """Quality gate, optional sourced explanation, human review if needed, report."""
+        if svc.store.get(analysis_id) is None:
+            raise HTTPException(404, "analysis not found")
+        return wf.start(analysis_id, body.explain, body.question)
+
+    @app.get("/api/v1/analyses/{analysis_id}/workflows", response_model=list[WorkflowSummary])
+    def analysis_workflows(analysis_id: str, wf: Workflow) -> list:
+        return wf.index.list(analysis_id)
+
+    @app.get("/api/v1/workflows", response_model=list[WorkflowSummary])
+    def list_workflows(wf: Workflow, limit: int = 50) -> list:
+        return wf.index.list(limit=min(max(limit, 1), 500))
+
+    @app.get("/api/v1/workflows/{workflow_id}", response_model=WorkflowView)
+    def get_workflow_view(workflow_id: str, wf: Workflow) -> dict:
+        view = wf.get(workflow_id)
+        if view is None:
+            raise HTTPException(404, "workflow not found")
+        return view
+
+    @app.post("/api/v1/workflows/{workflow_id}/review", response_model=WorkflowView)
+    def submit_review(workflow_id: str, body: ReviewRequest, wf: Workflow) -> dict:
+        try:
+            return wf.review(workflow_id, body.model_dump())
+        except KeyError:
+            raise HTTPException(404, "workflow not found") from None
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from None
+
+    @app.get("/api/v1/rag/index")
+    def rag_index(svc: Service) -> dict:
+        """Manifest of the documentary index (corpus version, embeddings, documents)."""
+        path = svc.settings.rag_dir / "index_manifest.json"
+        if not path.exists():
+            raise HTTPException(404, "index RAG absent")
+        import json
+
+        return json.loads(path.read_text())
 
     return app
 

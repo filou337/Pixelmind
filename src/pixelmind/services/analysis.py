@@ -33,7 +33,7 @@ from pixelmind.settings import Settings
 
 ALLOWED_FORMATS = {"PNG", "JPEG", "TIFF"}
 ARTIFACT_NAMES = {"t1.png", "t2.png", "reference_mask.png", "probability.png", "mask.png",
-                  "overlay.png"}  # fmt: skip
+                  "overlay.png", "report.md"}  # fmt: skip
 _ID_RE = re.compile(r"^pm_\d{8}_[0-9a-f]{8}$")
 
 LIMITATIONS = [

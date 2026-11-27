@@ -176,3 +176,42 @@ class AnswerResult(BaseModel):
     generation: GenerationInfo
     index: dict[str, str | int | None]
     latency_s: float
+
+
+class WorkflowRequest(BaseModel):
+    explain: bool = False  # ask the RAG for a sourced explanation (LLM call)
+    question: str | None = Field(default=None, min_length=3, max_length=1000)
+
+
+class RegionFeedback(BaseModel):
+    bbox: list[int] = Field(min_length=4, max_length=4)
+    label: Literal["confirmed", "false_positive", "missed_change"]
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ReviewRequest(BaseModel):
+    decision: Literal["approved", "corrected", "rejected"]
+    reviewer: str = Field(min_length=1, max_length=100)
+    comment: str | None = Field(default=None, max_length=2000)
+    region_feedback: list[RegionFeedback] = Field(default_factory=list, max_length=100)
+
+
+class WorkflowSummary(BaseModel):
+    workflow_id: str
+    analysis_id: str
+    created_at: str
+    updated_at: str
+    status: str
+
+
+class WorkflowView(BaseModel):
+    workflow_id: str
+    analysis_id: str
+    status: Literal["running", "awaiting_review", "completed", "rejected"]
+    pending_review: dict | None
+    gate: dict | None
+    review: dict | None
+    research: dict | None
+    report_uri: str | None
+    warnings: list[str]
+    trace: list[dict]
