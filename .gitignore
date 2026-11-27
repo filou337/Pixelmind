@@ -13,7 +13,8 @@ dist/
 .env
 
 # Data & outputs (LEVIR-CD licence: academic use only, never commit images/masks)
-data/
+data/*
+!data/manifests/
 artifacts/
 mlruns/
 mlartifacts/

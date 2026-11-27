@@ -9,13 +9,13 @@ Décisions : [`docs/adr/`](docs/adr/).
 
 ## Statut
 
-Sprint 0 (Foundation) : squelette, API de santé, tests, CI, Docker.
+Sprint 1 (Data) : téléchargement LEVIR-CD, manifeste, contrôles qualité, EDA.
 
 | Sprint | Contenu | Statut |
 |---|---|---|
 | S0 | Repo, conventions, CI, Docker | ✅ |
-| S1 | LEVIR-CD, manifeste, EDA, qualité | ⏳ |
-| S2 | Baselines (différence d'images, RF) | |
+| S1 | LEVIR-CD, manifeste, EDA, qualité | ✅ |
+| S2 | Baselines (différence d'images, RF) | ⏳ |
 | S3 | U-Net, Siamese U-Net, MLflow | |
 | S4 | API d'analyse, stockage | |
 | S5 | RAG (Qdrant) | |
@@ -33,6 +33,21 @@ pytest                 # tests
 ruff check . && ruff format --check .   # lint
 uvicorn pixelmind.api.main:app --reload # API → http://localhost:8000/api/v1/health
 ```
+
+## Données (Sprint 1)
+
+```bash
+python -m pixelmind.data.download     # LEVIR-CD (~2,5 Go, MD5 vérifié) -> data/raw/levircd/{train,val,test}
+python -m pixelmind.data.manifest     # manifeste + statut qualité -> data/manifests/levircd.jsonl
+python -m pixelmind.data.eda          # rapport -> docs/data/levircd_quality_report.md
+```
+
+Le manifeste (versionné dans Git, sans images) contient pour chaque paire : chemins,
+SHA-256, dimensions, modes, ratio de pixels changés, statut `PASS/WARN/REVIEW/FAIL`
+et anomalies. Le split officiel train/val/test est conservé tel quel ; une même
+image présente dans deux splits est marquée `FAIL` (fuite de données).
+
+Rapport : [`docs/data/levircd_quality_report.md`](docs/data/levircd_quality_report.md).
 
 Avec Docker :
 
